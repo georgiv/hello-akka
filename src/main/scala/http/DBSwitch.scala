@@ -6,7 +6,7 @@ object DBSwitch {
   def apply(host: String, port: Integer, user: String, password: String): DBSwitch = new DBSwitch(host, port, user, password)
 
   def main(args: Array[String]): Unit = {
-    val con = DBSwitch("localhost", 3306, "root", "m1FuckinMySQL")
+    val con = DBSwitch("localhost", 3306, "root", ???)
     println("Connection successful")
 
     println(con.getUser("cranki"))
