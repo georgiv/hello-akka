@@ -31,11 +31,10 @@ object UsersHandler {
 
     import system.dispatcher
 
-    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker],
-                                                                "localhost",
-                                                                3306,
-                                                                "root",
-                                                                "m1FuckinMySQL")), "db-workers")
+    val cp = 'mimoza
+    DBWorker.setup(cp)
+
+    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker], cp)), "db-workers")
 
     val route =
       pathPrefix("users") {

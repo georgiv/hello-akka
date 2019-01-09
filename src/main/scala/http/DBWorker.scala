@@ -10,7 +10,7 @@ case class User(name: String, email: String)
 
 object User extends SQLSyntaxSupport[User] {
   override val tableName = "user"
-  override val connectionPoolName = "mimozaDB"
+  override val connectionPoolName = 'mimoza
 
   def apply(u: ResultName[User])(rs: WrappedResultSet) = {
     new User(rs.string(u.name), rs.string(u.email))
@@ -21,47 +21,51 @@ case class AddUser(user: User)
 case class GetUser(name: String)
 
 object DBWorker {
+  def setup(connectionPoolName: Symbol) = scalikejdbc.config.DBsWithEnv("test").setup(connectionPoolName)
+
+  def apply(connectionPoolName: Symbol) = new DBWorker(connectionPoolName)
+
   def main(args: Array[String]): Unit = {
-    val host = "localhost"
-    val port = 3306
-    val user = "root"
-    val password = "m1FuckinMySQL"
+    scalikejdbc.config.DBsWithEnv("test").setup('mimoza)
 
-    val settings = ConnectionPoolSettings(
-      initialSize = 5,
-      maxSize = 20,
-      connectionTimeoutMillis = 3000L,
-      validationQuery = "select 1 from dual",
-    )
-
-    ConnectionPool.add("mimozaDB", s"jdbc:mysql://$host:$port/mimoza ", user, password, settings)
-
-    NamedDB("mimozaDB") readOnly { implicit session =>
+    val res = NamedDB('mimoza) autoCommit { implicit session =>
+      val user = User("venci_man", "venci_man@hotmail.bg")
       val u = User.syntax("u")
-      val res = sql"select ${u.result.*} from ${User.as(u)}"
-        .map(User(u.resultName)).list.apply()
-      res.foreach(u => println(s"user: ${u.name}, email: ${u.email}"))
+      val uc = User.column
+      val res = withSQL {
+        insert.into(User).namedValues(uc.name -> user.name, uc.email -> user.email)
+      }.update.apply()
     }
+    println(res)
   }
 }
 
-class DBWorker(host: String, port: Integer, user: String, password: String) extends Actor {
-  val con = DriverManager.getConnection(s"jdbc:mysql://$host:$port/mimoza ", user, password)
-
+class DBWorker(connectionPoolName: Symbol) extends Actor {
   def receive = {
     case AddUser(u) =>
       try {
-        con.createStatement().execute(s"INSERT INTO user (name, email) VALUES ('${u.name}', '${u.email}')")
+        NamedDB(connectionPoolName) autoCommit { implicit session =>
+          val us = User.syntax("u")
+          val uc = User.column
+          val res = withSQL {
+            insert.into(User).namedValues(uc.name -> u.name, uc.email -> u.email)
+          }.update.apply()
+        }
         sender() ! (StatusCodes.Created, Nil)
       } catch {
         case ex: SQLException => sender() ! (StatusCodes.Conflict, ex)
       }
 
     case GetUser(n) =>
-      val rs = con.createStatement().executeQuery(s"SELECT * FROM user WHERE name = '$n'")
-      if (rs.next())
-        sender() ! (StatusCodes.OK, User(rs.getString("name"), rs.getString("email")))
-      else
-        sender() ! (StatusCodes.NotFound, Nil)
+      NamedDB(connectionPoolName) readOnly { implicit session =>
+        val us = User.syntax("u")
+        val res = withSQL {
+          select.from(User as us).where.eq(us.name, n)
+        }.map(User(us.resultName)).single.apply()
+        res match {
+          case Some(x) => sender() ! (StatusCodes.OK, x)
+          case None => sender() ! (StatusCodes.NotFound, Nil)
+        }
+      }
   }
 }
