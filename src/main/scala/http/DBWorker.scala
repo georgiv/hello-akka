@@ -4,7 +4,10 @@ import java.sql.{DriverManager, SQLException}
 
 import akka.actor.Actor
 import akka.http.scaladsl.model.StatusCodes
+import redis.RedisClient
 import scalikejdbc._
+
+import scala.concurrent.Await
 
 case class User(name: String, email: String)
 
@@ -26,17 +29,19 @@ object DBWorker {
   def apply(connectionPoolName: Symbol) = new DBWorker(connectionPoolName)
 
   def main(args: Array[String]): Unit = {
-    scalikejdbc.config.DBsWithEnv("test").setup('mimoza)
+    implicit val system = akka.actor.ActorSystem("test")
+    import system.dispatcher
+    import scala.concurrent.duration._
 
-    val res = NamedDB('mimoza) autoCommit { implicit session =>
-      val user = User("venci_man", "venci_man@hotmail.bg")
-      val u = User.syntax("u")
-      val uc = User.column
-      val res = withSQL {
-        insert.into(User).namedValues(uc.name -> user.name, uc.email -> user.email)
-      }.update.apply()
-    }
-    println(res)
+    val redis = RedisClient()
+
+    val pong = redis.ping()
+    print("Ping sent!")
+    pong.map(pong => {
+      println(s"Redis replied with $pong")
+    })
+    Await.result(pong, 5.seconds)
+    system.terminate()
   }
 }
 
