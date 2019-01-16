@@ -10,6 +10,7 @@ import akka.pattern.ask
 import akka.routing.RoundRobinPool
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
+import redis.RedisClient
 import spray.json.DefaultJsonProtocol._
 
 import scala.concurrent.Await
@@ -27,20 +28,25 @@ object UsersHandler {
 
     implicit val userFormat = jsonFormat2(User.apply)
 
-    implicit val timeout = Timeout(5 seconds)
+    implicit val timeout = Timeout(10 seconds)
 
     import system.dispatcher
+
+    val redisHost = "localhost"
+    val redisPort = 6379
+
+    val redis = RedisClient(host = redisHost, port = redisPort)
 
     val cp = 'mimoza
     DBWorker.setup(cp)
 
-    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker], cp)), "db-workers")
+    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker], cp, redis)), "db-workers")
 
     val route =
       pathPrefix("users") {
         get {
           path(Segment) { user =>
-            val res = Await.result(dbWorker ? GetUser(user), 5 seconds)
+            val res = Await.result(dbWorker ? GetUser(user), 10 seconds)
             res match {
               case (StatusCodes.OK, u: User) => complete(StatusCodes.OK -> u)
               case (StatusCodes.NotFound, _) => complete(StatusCodes.NotFound -> s"User $user not registered")
@@ -49,7 +55,7 @@ object UsersHandler {
         } ~
         post {
           entity(as[User]) { user =>
-            val res = Await.result(dbWorker ? AddUser(user), 5 seconds)
+            val res = Await.result(dbWorker ? AddUser(user), 10 seconds)
             res match {
               case (StatusCodes.Created, _) => complete(StatusCodes.Created -> s"User ${user.name} persisted")
               case (StatusCodes.Conflict, ex: Exception) => complete(StatusCodes.Conflict -> s"User could not be persisted: ${ex.getMessage}")
