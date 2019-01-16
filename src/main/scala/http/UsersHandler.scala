@@ -61,6 +61,13 @@ object UsersHandler {
               case (StatusCodes.Conflict, ex: Exception) => complete(StatusCodes.Conflict -> s"User could not be persisted: ${ex.getMessage}")
             }
           }
+        } ~
+        patch {
+          path(Segment) { user =>
+            entity(as[User]) { user =>
+              complete(user)
+            }
+          }
         }
       }
 

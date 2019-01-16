@@ -6,12 +6,28 @@ import akka.actor.Actor
 import akka.http.scaladsl.model.StatusCodes
 import redis.RedisClient
 import scalikejdbc._
+import spray.json._
+import spray.json.DefaultJsonProtocol._
 
 case class User(name: String, email: String)
 
 object User extends SQLSyntaxSupport[User] {
+  implicit object UserJSONFormat extends RootJsonFormat[User] {
+    def read(json: JsValue) = {
+      val fields = json.asJsObject().fields
+      val name = fields.get("name").map(_.convertTo[String]).getOrElse("")
+      val email = fields.get("email").map(_.convertTo[String]).getOrElse("")
+      User(name, email)
+    }
+
+    def write(obj: User) = JsObject("name" -> JsString(obj.name),
+      "email" -> JsString(obj.email))
+  }
+
   override val tableName = "user"
   override val connectionPoolName = 'mimoza
+
+  def apply(name: String, email: String) = new User(name, email)
 
   def apply(u: ResultName[User])(rs: WrappedResultSet) = {
     new User(rs.string(u.name), rs.string(u.email))
@@ -20,6 +36,7 @@ object User extends SQLSyntaxSupport[User] {
 
 case class AddUser(user: User)
 case class GetUser(name: String)
+case class UpdateUser(name: String)
 
 object DBWorker {
   def setup(connectionPoolName: Symbol) = scalikejdbc.config.DBsWithEnv("test").setup(connectionPoolName)
