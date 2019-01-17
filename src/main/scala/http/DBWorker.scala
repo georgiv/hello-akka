@@ -9,6 +9,8 @@ import scalikejdbc._
 import spray.json._
 import spray.json.DefaultJsonProtocol._
 
+import scala.collection.mutable.ListBuffer
+
 case class User(name: String, email: String)
 
 object User extends SQLSyntaxSupport[User] {
@@ -21,7 +23,7 @@ object User extends SQLSyntaxSupport[User] {
     }
 
     def write(obj: User) = JsObject("name" -> JsString(obj.name),
-      "email" -> JsString(obj.email))
+                                    "email" -> JsString(obj.email))
   }
 
   override val tableName = "user"
@@ -36,7 +38,7 @@ object User extends SQLSyntaxSupport[User] {
 
 case class AddUser(user: User)
 case class GetUser(name: String)
-case class UpdateUser(name: String)
+case class UpdateUser(name: String, user: User)
 
 object DBWorker {
   def setup(connectionPoolName: Symbol) = scalikejdbc.config.DBsWithEnv("test").setup(connectionPoolName)
@@ -44,16 +46,7 @@ object DBWorker {
   def apply(connectionPoolName: Symbol, redis: RedisClient) = new DBWorker(connectionPoolName, redis)
 
   def main(args: Array[String]): Unit = {
-    implicit val system = akka.actor.ActorSystem("test")
-    import system.dispatcher
-
-    val redis = RedisClient()
-
-    //redis.hmset("user:joro", Map("name" -> "joro", "email" -> "joro@hotmail.com"))
-
-    val res = redis.hgetall("user:cranki")
-    res.map(m => println(User(m("name").decodeString("UTF-8"),
-                              m("email").decodeString("UTF-8"))))
+    User("", "").getClass.getFields.foreach(println)
   }
 }
 
@@ -64,9 +57,9 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
     case AddUser(u) =>
       try {
         NamedDB(connectionPoolName) autoCommit { implicit session =>
-          val us = User.syntax("u")
+          //val us = User.syntax("u")
           val uc = User.column
-          val res = withSQL {
+          withSQL {
             insert.into(User).namedValues(uc.name -> u.name, uc.email -> u.email)
           }.update.apply()
         }
@@ -105,5 +98,16 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
           }
         }
       })
+
+    case UpdateUser(n, u) =>
+      val s = sender()
+
+      var updates = ListBuffer[String]()
+      if (u.name != "") updates += s"name = ${u.name}"
+      if (u.email != "") updates += s"email = ${u.email}"
+
+      NamedDB(connectionPoolName) autoCommit { implicit session =>
+        sql"update user set ($updates) where name = $n".update.apply()
+      }
   }
 }

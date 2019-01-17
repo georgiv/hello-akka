@@ -37,6 +37,8 @@ object UsersHandler {
 
     val redis = RedisClient(host = redisHost, port = redisPort)
 
+    import User.UserJSONFormat
+
     val cp = 'mimoza
     DBWorker.setup(cp)
 
@@ -45,11 +47,11 @@ object UsersHandler {
     val route =
       pathPrefix("users") {
         get {
-          path(Segment) { user =>
-            val res = Await.result(dbWorker ? GetUser(user), 10 seconds)
+          path(Segment) { name =>
+            val res = Await.result(dbWorker ? GetUser(name), 10 seconds)
             res match {
               case (StatusCodes.OK, u: User) => complete(StatusCodes.OK -> u)
-              case (StatusCodes.NotFound, _) => complete(StatusCodes.NotFound -> s"User $user not registered")
+              case (StatusCodes.NotFound, _) => complete(StatusCodes.NotFound -> s"User $name not registered")
             }
           }
         } ~
@@ -63,9 +65,14 @@ object UsersHandler {
           }
         } ~
         patch {
-          path(Segment) { user =>
+          path(Segment) { name =>
             entity(as[User]) { user =>
-              complete(user)
+              val res = Await.result(dbWorker ? UpdateUser(name, user), 10 seconds)
+              res match {
+                case (StatusCodes.OK, _) => complete(StatusCodes.OK -> s"User updated")
+                case (StatusCodes.NotFound, ex: Exception) => complete(StatusCodes.NotFound -> s"User could not be updated: ${ex.getMessage}")
+              }
+              complete(s"$name:$user")
             }
           }
         }
