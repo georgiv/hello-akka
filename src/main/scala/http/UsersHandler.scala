@@ -70,9 +70,9 @@ object UsersHandler {
               val res = Await.result(dbWorker ? UpdateUser(name, user), 10 seconds)
               res match {
                 case (StatusCodes.OK, _) => complete(StatusCodes.OK -> s"User updated")
-                case (StatusCodes.NotFound, ex: Exception) => complete(StatusCodes.NotFound -> s"User could not be updated: ${ex.getMessage}")
+                case (StatusCodes.NotFound, ex: Exception) => complete(StatusCodes.NotFound -> s"User not found: ${ex.getMessage}")
+                case (StatusCodes.InternalServerError, ex: Exception) => complete(StatusCodes.InternalServerError -> s"User could not be updated: ${ex.getMessage}")
               }
-              complete(s"$name:$user")
             }
           }
         }

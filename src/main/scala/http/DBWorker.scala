@@ -6,10 +6,8 @@ import akka.actor.Actor
 import akka.http.scaladsl.model.StatusCodes
 import redis.RedisClient
 import scalikejdbc._
-import spray.json._
 import spray.json.DefaultJsonProtocol._
-
-import scala.collection.mutable.ListBuffer
+import spray.json._
 
 case class User(name: String, email: String)
 
@@ -80,7 +78,7 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
             map(m => {
               val u = User(m("name").decodeString("UTF-8"),
                            m("email").decodeString("UTF-8"))
-              s ! (StatusCodes.OK, u)
+              s ! (StatusCodes.OK, None)
             })
         }
         case false => {
@@ -101,13 +99,34 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
 
     case UpdateUser(n, u) =>
       val s = sender()
+      try {
+        val existing = NamedDB(connectionPoolName) readOnly { implicit session =>
+          val us = User.syntax("u")
+          withSQL {
+            select.from(User as us).where.eq(us.name, n)
+          }.map(User(us.resultName)).single.apply.get
+        }
 
-      var updates = ListBuffer[String]()
-      if (u.name != "") updates += s"name = ${u.name}"
-      if (u.email != "") updates += s"email = ${u.email}"
+        val changes = u.getClass.getDeclaredFields.filter(f => { f.setAccessible(true)
+                                                                 f.get(u).toString == "" }).map(_ getName)
 
-      NamedDB(connectionPoolName) autoCommit { implicit session =>
-        sql"update user set ($updates) where name = $n".update.apply()
+        changes.foreach(c => { val f = u.getClass.getDeclaredField(c)
+          f.setAccessible(true)
+          f.set(u, f.get(existing)) })
+
+        NamedDB(connectionPoolName) autoCommit { implicit session =>
+          val uc = User.column
+          withSQL {
+            update(User).set(User.column.name -> u.name, User.column.email -> u.email).where.eq(uc.name, n)
+          }.update.apply()
+        }
+
+        redis.hmset(s"user:${u.name}", Map("name" -> u.name, "email" -> u.email))
+
+        s ! (StatusCodes.OK, None)
+      } catch {
+        case ex: SQLException => s ! (StatusCodes.NotFound, ex)
+        case ex: Exception => s ! (StatusCodes.InternalServerError, ex)
       }
   }
 }
