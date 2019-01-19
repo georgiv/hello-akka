@@ -132,7 +132,6 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
     case DeleteUser(n) =>
       val s = sender()
 
-
       try {
         redis.exists(s"user:$n").map(if (_) redis.del(s"user:$n"))
 
