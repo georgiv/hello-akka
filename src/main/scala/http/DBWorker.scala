@@ -37,6 +37,7 @@ object User extends SQLSyntaxSupport[User] {
 case class AddUser(user: User)
 case class GetUser(name: String)
 case class UpdateUser(name: String, user: User)
+case class DeleteUser(name: String)
 
 object DBWorker {
   def setup(connectionPoolName: Symbol) = scalikejdbc.config.DBsWithEnv("test").setup(connectionPoolName)
@@ -55,7 +56,6 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
     case AddUser(u) =>
       try {
         NamedDB(connectionPoolName) autoCommit { implicit session =>
-          //val us = User.syntax("u")
           val uc = User.column
           withSQL {
             insert.into(User).namedValues(uc.name -> u.name, uc.email -> u.email)
@@ -78,7 +78,7 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
             map(m => {
               val u = User(m("name").decodeString("UTF-8"),
                            m("email").decodeString("UTF-8"))
-              s ! (StatusCodes.OK, None)
+              s ! (StatusCodes.OK, u)
             })
         }
         case false => {
@@ -111,8 +111,8 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
                                                                  f.get(u).toString == "" }).map(_ getName)
 
         changes.foreach(c => { val f = u.getClass.getDeclaredField(c)
-          f.setAccessible(true)
-          f.set(u, f.get(existing)) })
+                               f.setAccessible(true)
+                               f.set(u, f.get(existing)) })
 
         NamedDB(connectionPoolName) autoCommit { implicit session =>
           val uc = User.column
@@ -121,12 +121,30 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
           }.update.apply()
         }
 
+        redis.exists(s"user:$n").map(if (_) redis.del(s"user:$n"))
         redis.hmset(s"user:${u.name}", Map("name" -> u.name, "email" -> u.email))
 
         s ! (StatusCodes.OK, None)
       } catch {
         case ex: SQLException => s ! (StatusCodes.NotFound, ex)
-        case ex: Exception => s ! (StatusCodes.InternalServerError, ex)
+      }
+
+    case DeleteUser(n) =>
+      val s = sender()
+
+
+      try {
+        redis.exists(s"user:$n").map(if (_) redis.del(s"user:$n"))
+
+        NamedDB(connectionPoolName) autoCommit { implicit session =>
+          withSQL {
+            delete.from(User).where.eq(User.column.name, n)
+          }.update.apply()
+        }
+
+        s ! (StatusCodes.OK, None)
+      } catch {
+        case ex: SQLException => s ! (StatusCodes.NotFound, ex)
       }
   }
 }

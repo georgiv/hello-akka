@@ -69,10 +69,18 @@ object UsersHandler {
             entity(as[User]) { user =>
               val res = Await.result(dbWorker ? UpdateUser(name, user), 10 seconds)
               res match {
-                case (StatusCodes.OK, _) => complete(StatusCodes.OK -> s"User updated")
-                case (StatusCodes.NotFound, ex: Exception) => complete(StatusCodes.NotFound -> s"User not found: ${ex.getMessage}")
-                case (StatusCodes.InternalServerError, ex: Exception) => complete(StatusCodes.InternalServerError -> s"User could not be updated: ${ex.getMessage}")
+                case (StatusCodes.OK, _) => complete(StatusCodes.OK -> "User updated")
+                case (StatusCodes.NotFound, ex: Exception) => complete(StatusCodes.NotFound -> s"User could not be updated: ${ex.getMessage}")
               }
+            }
+          }
+        } ~
+        delete {
+          path(Segment) { name =>
+            val res = Await.result(dbWorker ? DeleteUser(name), 10 seconds)
+            res match {
+              case (StatusCodes.OK, _) => complete(StatusCodes.OK -> s"User $name deleted")
+              case (StatusCodes.NotFound, ex: Exception) => complete(StatusCodes.NotFound -> s"User could not be deleted ${ex.getMessage}")
             }
           }
         }
