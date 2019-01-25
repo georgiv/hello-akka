@@ -26,7 +26,7 @@ object UsersHandler {
     implicit val system = ActorSystem("users-handler")
     implicit val materializer = ActorMaterializer()
 
-    implicit val userFormat = jsonFormat2(User.apply)
+    implicit val userFormat = jsonFormat6(User.apply)
 
     implicit val timeout = Timeout(10 seconds)
 
