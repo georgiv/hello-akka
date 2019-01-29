@@ -17,5 +17,7 @@ libraryDependencies ++= Seq(
   "com.h2database" %  "h2" % "1.4.197",
   "ch.qos.logback" % "logback-classic" % "1.2.3",
 
-  "com.github.etaty" %% "rediscala" % "1.8.0"
+  "com.github.etaty" %% "rediscala" % "1.8.0",
+
+  "io.minio" % "minio" % "6.0.0"
 )

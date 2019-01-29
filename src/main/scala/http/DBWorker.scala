@@ -2,10 +2,9 @@ package http
 
 import java.sql.SQLException
 
-import akka.actor.{Actor, ActorSystem, Props}
+import akka.actor.Actor
 import akka.http.scaladsl.model.StatusCodes
-import akka.routing.RoundRobinPool
-import akka.stream.ActorMaterializer
+import io.minio.MinioClient
 import redis.RedisClient
 import scalikejdbc._
 import spray.json.DefaultJsonProtocol._
@@ -70,22 +69,29 @@ object DBWorker {
   def apply(connectionPoolName: Symbol, redis: RedisClient) = new DBWorker(connectionPoolName, redis)
 
   def main(args: Array[String]): Unit = {
-    implicit val system = ActorSystem("users-handler")
-    implicit val materializer = ActorMaterializer()
+//    implicit val system = ActorSystem("users-handler")
+//    implicit val materializer = ActorMaterializer()
+//
+//    scalikejdbc.config.DBsWithEnv("test").setup('mimoza)
+//    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker], 'mimoza, RedisClient())), "db-workers")
+//
+//    NamedDB('mimoza) readOnly { implicit session =>
+//      val us = User.syntax("u")
+//      val res = withSQL {
+//        select.from(User as us).where.eq(us.name, "cassandra")
+//      }.map(User(us.resultName)).single.apply()
+//      res match {
+//        case Some(x) => println("FOUND")
+//        case None => println("NOT FOUND")
+//      }
+//    }
 
-    scalikejdbc.config.DBsWithEnv("test").setup('mimoza)
-    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker], 'mimoza, RedisClient())), "db-workers")
-
-    NamedDB('mimoza) readOnly { implicit session =>
-      val us = User.syntax("u")
-      val res = withSQL {
-        select.from(User as us).where.eq(us.name, "memphis")
-      }.map(User(us.resultName)).single.apply()
-      res match {
-        case Some(x) => println("FOUND")
-        case None => println("NOT FOUND")
-      }
-    }
+    val minio = new MinioClient("http://localhost:9001",
+                               "AKIAIOSFODNN7EXAMPLE",
+                               "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+    println(minio.listBuckets())
+    println(minio.makeBucket("dummy"))
+    println(minio.listBuckets())
   }
 }
 
