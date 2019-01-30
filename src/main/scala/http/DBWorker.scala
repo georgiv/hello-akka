@@ -1,10 +1,13 @@
 package http
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File}
 import java.sql.SQLException
+import java.util.Base64
 
 import akka.actor.Actor
 import akka.http.scaladsl.model.StatusCodes
 import io.minio.MinioClient
+import javax.imageio.ImageIO
 import redis.RedisClient
 import scalikejdbc._
 import spray.json.DefaultJsonProtocol._
@@ -66,7 +69,7 @@ case class DeleteUser(name: String)
 object DBWorker {
   def setup(connectionPoolName: Symbol) = scalikejdbc.config.DBsWithEnv("test").setup(connectionPoolName)
 
-  def apply(connectionPoolName: Symbol, redis: RedisClient) = new DBWorker(connectionPoolName, redis)
+  def apply(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClient) = new DBWorker(connectionPoolName, redis, minio)
 
   def main(args: Array[String]): Unit = {
 //    implicit val system = ActorSystem("users-handler")
@@ -86,28 +89,39 @@ object DBWorker {
 //      }
 //    }
 
-    val minio = new MinioClient("http://localhost:9001",
-                               "AKIAIOSFODNN7EXAMPLE",
-                               "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
-    println(minio.listBuckets())
-    println(minio.makeBucket("dummy"))
-    println(minio.listBuckets())
+    val minio = new MinioClient("http://localhost:9000",
+                               "Q3AM3UQ867SPQQA43P2F",
+                               "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
+
+//    val os = new ByteArrayOutputStream
+//    ImageIO.write(ImageIO.read(new File("/home/cranki/Downloads/frog.jpg")), "jpg", os)
+//    val is = new ByteArrayInputStream(os.toByteArray)
+//
+//    val encoded = Base64.getEncoder.encodeToString(os.toByteArray)
+//    val decoded = Base64.getDecoder.decode(encoded)
+//    import java.util.Arrays;
+//    println(Arrays.equals(decoded, os.toByteArray))
+    minio.getObject()
   }
 }
 
-class DBWorker(connectionPoolName: Symbol, redis: RedisClient) extends Actor {
+class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClient) extends Actor {
   import redis.executionContext
 
   def receive = {
     case AddUser(u) =>
       try {
+        val avatar = new ByteArrayInputStream(Base64.getDecoder.decode(u.avatar))
+        if (!minio.bucketExists(u.name)) minio.makeBucket(u.name)
+        minio.putObject(u.name, "avatar", avatar, "image/png")
+
         NamedDB(connectionPoolName) autoCommit { implicit session =>
           val uc = User.column
           withSQL {
             insert.into(User).namedValues(uc.name -> u.name,
                                           uc.email -> u.email,
                                           uc.password -> u.password,
-                                          uc.avatar -> u.avatar,
+                                          uc.avatar -> s"${u.name}/avatar",
                                           uc.created -> u.created,
                                           uc.last_login -> u.last_login)
           }.update.apply()

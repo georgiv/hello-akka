@@ -10,6 +10,7 @@ import akka.pattern.ask
 import akka.routing.RoundRobinPool
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
+import io.minio.MinioClient
 import redis.RedisClient
 import spray.json.DefaultJsonProtocol._
 
@@ -21,7 +22,7 @@ import scala.util.{Failure, Success}
 object UsersHandler {
   def main(args: Array[String]): Unit = {
     val host = "localhost"
-    val port = 9000
+    val port = 4000
 
     implicit val system = ActorSystem("users-handler")
     implicit val materializer = ActorMaterializer()
@@ -37,12 +38,16 @@ object UsersHandler {
 
     val redis = RedisClient(host = redisHost, port = redisPort)
 
+    val minio = new MinioClient("http://localhost:9000",
+                               "Q3AM3UQ867SPQQA43P2F",
+                               "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
+
     import User.UserJSONFormat
 
     val cp = 'mimoza
     DBWorker.setup(cp)
 
-    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker], cp, redis)), "db-workers")
+    val dbWorker = system.actorOf(RoundRobinPool(5).props(Props(classOf[DBWorker], cp, redis, minio)), "db-workers")
 
     val route =
       pathPrefix("users") {
