@@ -140,7 +140,7 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
         redis.hmset(s"user:${u.name}", Map("name" -> u.name,
                                                 "email" -> u.email,
                                                 "password" -> u.password,
-                                                "avatar" -> u.avatar,
+                                                "avatar" -> s"${u.name}/avatar",
                                                 "created" -> s"${u.created}",
                                                 "last_login" -> s"${u.last_login}"))
 
