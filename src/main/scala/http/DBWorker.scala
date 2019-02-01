@@ -90,12 +90,12 @@ object DBWorker {
 //        case None => println("NOT FOUND")
 //      }
 //    }
-
-    val minio = new MinioClient("http://localhost:9000",
-                               "Q3AM3UQ867SPQQA43P2F",
-                               "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
-
-    minio.listObjects("cassandra").forEach(e => println(e.get.objectName()))
+//
+//    val minio = new MinioClient("http://localhost:9000",
+//                               "Q3AM3UQ867SPQQA43P2F",
+//                               "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
+//
+//    minio.listObjects("cassandra").forEach(e => println(e.get.objectName()))
 //    val os = new ByteArrayOutputStream()
 //    ImageIO.write(ImageIO.read(new File("/home/cranki/Downloads/avatar")), "png", os)
 //    val is = new ByteArrayInputStream(os.toByteArray)
@@ -112,6 +112,8 @@ object DBWorker {
 //    val img = ImageIO.read(new ByteArrayInputStream(bytes))
 //
 //    ImageIO.write(img, "png", new File("/home/cranki/Downloads/png.png"))
+    val u = User("cranki", "cranki@gmail.com", "abcd1234", "cranki/avatar", 0L, 0L)
+    u.getClass.getDeclaredFields.foreach(f => println(f.getName))
   }
 }
 
@@ -134,7 +136,7 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
         }
 
         val avatar = new ByteArrayInputStream(Base64.getDecoder.decode(u.avatar))
-        if (!minio.bucketExists(u.name)) minio.makeBucket(u.name)
+        minio.makeBucket(u.name)
         minio.putObject(u.name, "avatar", avatar, "image/png")
 
         redis.hmset(s"user:${u.name}", Map("name" -> u.name,
@@ -198,6 +200,24 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
     case UpdateUser(n, u) =>
       val s = sender()
       try {
+        if (u.name != "") {
+          val avatar = minio.getObject(n, "avatar")
+
+          minio.listObjects(n).forEach(e => minio.removeObject(n, e.get.objectName()))
+          minio.removeBucket(n)
+
+          minio.makeBucket(u.name)
+          minio.putObject(u.name, "avatar", avatar, "image/png")
+        }
+
+        if (u.avatar != "") {
+          val name = if (u.name != "") u.name else n
+          val avatar = new ByteArrayInputStream(Base64.getDecoder.decode(u.avatar))
+
+          minio.removeObject(name, "avatar")
+          minio.putObject(name, "avatar", avatar, "image/png")
+        }
+
         val existing = NamedDB(connectionPoolName) readOnly { implicit session =>
           val us = User.syntax("u")
           withSQL {
@@ -205,9 +225,11 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
           }.map(User(us.resultName)).single.apply.get
         }
 
-        val changes = u.getClass.getDeclaredFields.filter(f => { f.setAccessible(true)
-                                                                 val fv = f.get(u).toString
-                                                                 fv == "" || fv == "0"}).map(_ getName)
+        val changes = u.getClass.getDeclaredFields
+          .filter(_.getName != "avatar")
+          .filter(f => { f.setAccessible(true)
+                         val fv = f.get(u).toString
+                         fv == "" || fv == "0"}).map(_ getName)
 
         changes.foreach(c => { val f = u.getClass.getDeclaredField(c)
                                f.setAccessible(true)
@@ -217,19 +239,18 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
           val uc = User.column
           withSQL {
             update(User).set(User.column.name -> u.name,
-              User.column.email -> u.email,
-              User.column.password -> u.password,
-              User.column.avatar -> u.avatar,
-              User.column.created -> u.created,
-              User.column.last_login -> u.last_login).where.eq(uc.name, n)
+                             User.column.email -> u.email,
+                             User.column.password -> u.password,
+                             User.column.avatar -> s"${u.name}/avatar",
+                             User.column.created -> u.created,
+                             User.column.last_login -> u.last_login).where.eq(uc.name, n)
           }.update.apply()
         }
 
-        redis.exists(s"user:$n").map(if (_) redis.del(s"user:$n"))
         redis.hmset(s"user:${u.name}", Map("name" -> u.name,
                                                 "email" -> u.email,
                                                 "password" -> u.password,
-                                                "avatar" -> u.avatar,
+                                                "avatar" -> s"${u.name}/avatar",
                                                 "created" -> s"${u.created}",
                                                 "last_login" -> s"${u.last_login}"))
 
