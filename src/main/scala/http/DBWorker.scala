@@ -13,6 +13,8 @@ import scalikejdbc._
 import spray.json.DefaultJsonProtocol._
 import spray.json._
 
+import scala.reflect.io.Streamable
+
 case class User(name: String,
                 email: String,
                 password: String,
@@ -93,15 +95,23 @@ object DBWorker {
                                "Q3AM3UQ867SPQQA43P2F",
                                "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
 
-//    val os = new ByteArrayOutputStream
-//    ImageIO.write(ImageIO.read(new File("/home/cranki/Downloads/frog.jpg")), "jpg", os)
+    minio.listObjects("cassandra").forEach(e => println(e.get.objectName()))
+//    val os = new ByteArrayOutputStream()
+//    ImageIO.write(ImageIO.read(new File("/home/cranki/Downloads/avatar")), "png", os)
 //    val is = new ByteArrayInputStream(os.toByteArray)
 //
 //    val encoded = Base64.getEncoder.encodeToString(os.toByteArray)
 //    val decoded = Base64.getDecoder.decode(encoded)
+//
 //    import java.util.Arrays;
 //    println(Arrays.equals(decoded, os.toByteArray))
-    minio.getObject()
+//
+//    val in = minio.getObject("cassandra", "avatar")
+//
+//    val bytes = Streamable.bytes(in)
+//    val img = ImageIO.read(new ByteArrayInputStream(bytes))
+//
+//    ImageIO.write(img, "png", new File("/home/cranki/Downloads/png.png"))
   }
 }
 
@@ -111,10 +121,6 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
   def receive = {
     case AddUser(u) =>
       try {
-        val avatar = new ByteArrayInputStream(Base64.getDecoder.decode(u.avatar))
-        if (!minio.bucketExists(u.name)) minio.makeBucket(u.name)
-        minio.putObject(u.name, "avatar", avatar, "image/png")
-
         NamedDB(connectionPoolName) autoCommit { implicit session =>
           val uc = User.column
           withSQL {
@@ -126,6 +132,10 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
                                           uc.last_login -> u.last_login)
           }.update.apply()
         }
+
+        val avatar = new ByteArrayInputStream(Base64.getDecoder.decode(u.avatar))
+        if (!minio.bucketExists(u.name)) minio.makeBucket(u.name)
+        minio.putObject(u.name, "avatar", avatar, "image/png")
 
         redis.hmset(s"user:${u.name}", Map("name" -> u.name,
                                                 "email" -> u.email,
@@ -146,12 +156,16 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
         case true => {
           redis.hgetall(s"user:$n").
             map(m => {
+              val loc = m("avatar").decodeString("UTF-8").split("/")
+              val avatar = image(loc(0), loc(1))
+
               val u = User(m("name").decodeString("UTF-8"),
                            m("email").decodeString("UTF-8"),
                            m("password").decodeString("UTF-8"),
-                           m("avatar").decodeString("UTF-8"),
+                           avatar,
                            m("created").decodeString("UTF-8").toLong,
                            m("last_login").decodeString("UTF-8").toLong)
+
               s ! (StatusCodes.OK, u)
             })
         }
@@ -169,7 +183,12 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
                                                         "avatar" -> x.avatar,
                                                         "created" -> s"${x.created}",
                                                         "last_login" -> s"${x.last_login}"))
-                s ! (StatusCodes.OK, x)
+
+                val loc = x.avatar.split("/")
+                val avatar = image(loc(0), loc(1))
+                val u = User(x.name, x.email, x.password, avatar, x.created, x.last_login)
+
+                s ! (StatusCodes.OK, u)
               case None => s ! (StatusCodes.NotFound, None)
             }
           }
@@ -225,6 +244,9 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
       try {
         redis.exists(s"user:$n").map(if (_) redis.del(s"user:$n"))
 
+        minio.listObjects(n).forEach(e => minio.removeObject(n, e.get.objectName()))
+        minio.removeBucket(n)
+
         NamedDB(connectionPoolName) autoCommit { implicit session =>
           withSQL {
             delete.from(User).where.eq(User.column.name, n)
@@ -236,4 +258,7 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
         case ex: SQLException => s ! (StatusCodes.NotFound, ex)
       }
   }
+
+  def image(bucket: String, img: String = "avatar"): String =
+    Base64.getEncoder.encodeToString(Streamable.bytes(minio.getObject(bucket, img)))
 }
