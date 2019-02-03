@@ -19,5 +19,7 @@ libraryDependencies ++= Seq(
 
   "com.github.etaty" %% "rediscala" % "1.8.0",
 
-  "io.minio" % "minio" % "6.0.0"
+  "io.minio" % "minio" % "6.0.0",
+
+  "com.rabbitmq" % "amqp-client" % "5.6.0"
 )
