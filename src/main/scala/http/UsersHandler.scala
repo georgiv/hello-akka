@@ -4,6 +4,7 @@ import akka.actor.{ActorSystem, Props}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.headers.`Access-Control-Allow-Origin`
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.pattern.ask
@@ -53,10 +54,12 @@ object UsersHandler {
       pathPrefix("users") {
         get {
           path(Segment) { name =>
-            val res = Await.result(dbWorker ? GetUser(name), 10 seconds)
-            res match {
-              case (StatusCodes.OK, u: User) => complete(StatusCodes.OK -> u)
-              case (StatusCodes.NotFound, _) => complete(StatusCodes.NotFound -> s"User $name not registered")
+            respondWithHeaders(`Access-Control-Allow-Origin`.*) {
+              val res = Await.result(dbWorker ? GetUser(name), 10 seconds)
+              res match {
+                case (StatusCodes.OK, u: User) => complete(StatusCodes.OK -> u)
+                case (StatusCodes.NotFound, _) => complete(StatusCodes.NotFound -> s"User $name not registered")
+              }
             }
           }
         } ~
