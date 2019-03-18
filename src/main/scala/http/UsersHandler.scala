@@ -3,8 +3,9 @@ package http
 import akka.actor.{ActorSystem, Props}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-import akka.http.scaladsl.model.StatusCodes
-import akka.http.scaladsl.model.headers.`Access-Control-Allow-Origin`
+import akka.http.scaladsl.model.{ContentTypes, StatusCodes}
+import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Origin`, Allow, `Content-Type`}
+import akka.http.scaladsl.model.HttpMethods.{GET, POST, PATCH, DELETE}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.pattern.ask
@@ -54,7 +55,7 @@ object UsersHandler {
       pathPrefix("users") {
         get {
           path(Segment) { name =>
-            respondWithHeaders(`Access-Control-Allow-Origin`.*) {
+            respondWithHeaders(`Access-Control-Allow-Origin`.*, `Content-Type`(ContentTypes.`application/json`)) {
               val res = Await.result(dbWorker ? GetUser(name), 10 seconds)
               res match {
                 case (StatusCodes.OK, u: User) => complete(StatusCodes.OK -> u)
@@ -65,10 +66,13 @@ object UsersHandler {
         } ~
         post {
           entity(as[User]) { user =>
-            val res = Await.result(dbWorker ? AddUser(user), 10 seconds)
-            res match {
-              case (StatusCodes.Created, _) => complete(StatusCodes.Created -> s"User ${user.name} persisted")
-              case (StatusCodes.Conflict, ex: Exception) => complete(StatusCodes.Conflict -> s"User could not be persisted: ${ex.getMessage}")
+            println(user)
+            respondWithHeaders(`Access-Control-Allow-Origin`.*) {
+              val res = Await.result(dbWorker ? AddUser(user), 10 seconds)
+              res match {
+                case (StatusCodes.Created, _) => complete(StatusCodes.Created -> s"User ${user.name} persisted")
+                case (StatusCodes.Conflict, ex: Exception) => complete(StatusCodes.Conflict -> s"User could not be persisted: ${ex.getMessage}")
+              }
             }
           }
         } ~
@@ -90,6 +94,13 @@ object UsersHandler {
               case (StatusCodes.OK, _) => complete(StatusCodes.OK -> s"User $name deleted")
               case (StatusCodes.NotFound, ex: Exception) => complete(StatusCodes.NotFound -> s"User could not be deleted ${ex.getMessage}")
             }
+          }
+        } ~
+        options {
+          respondWithHeaders(`Access-Control-Allow-Headers`("Content-Type"),
+                             `Access-Control-Allow-Origin`.*,
+                             Allow(GET, POST, PATCH, DELETE)) {
+            complete(StatusCodes.OK)
           }
         }
       }
