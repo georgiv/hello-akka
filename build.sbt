@@ -9,6 +9,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-stream" % "2.5.19",
   "com.typesafe.akka" %% "akka-http" % "10.1.5",
   "com.typesafe.akka" %% "akka-http-spray-json" % "10.1.5",
+  "com.softwaremill.akka-http-session" %% "core" % "0.5.6",
 
   "mysql" % "mysql-connector-java" % "8.0.13",
 
