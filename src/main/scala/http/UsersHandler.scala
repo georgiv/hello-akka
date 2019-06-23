@@ -103,6 +103,26 @@ object UsersHandler {
             complete(StatusCodes.OK)
           }
         }
+      } ~
+      pathPrefix("login") {
+        post {
+          respondWithHeaders(`Access-Control-Allow-Origin`.*) {
+            entity(as[User]) { user =>
+              val res = Await.result(dbWorker ? LoginUser(user), 10 seconds)
+              res match {
+                case (StatusCodes.OK, u: User) => complete(StatusCodes.Created -> u)
+                case (StatusCodes.NotFound, _) => complete(StatusCodes.NotFound -> s"Wrong username or password")
+              }
+            }
+          }
+        } ~
+        options {
+          respondWithHeaders(`Access-Control-Allow-Headers`("Content-Type"),
+                             `Access-Control-Allow-Origin`.*,
+                             Allow(POST)) {
+            complete(StatusCodes.OK)
+          }
+        }
       }
 
     Http().bindAndHandleAsync(Route.asyncHandler(route), host, port)

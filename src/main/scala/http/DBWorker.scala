@@ -67,6 +67,7 @@ case class AddUser(user: User)
 case class GetUser(name: String)
 case class UpdateUser(name: String, user: User)
 case class DeleteUser(name: String)
+case class LoginUser(user: User)
 
 object DBWorker {
   def setup(connectionPoolName: Symbol) = scalikejdbc.config.DBsWithEnv("test").setup(connectionPoolName)
@@ -96,24 +97,25 @@ object DBWorker {
 //                               "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
 //
 //    minio.listObjects("cassandra").forEach(e => println(e.get.objectName()))
-//    val os = new ByteArrayOutputStream()
-//    ImageIO.write(ImageIO.read(new File("/home/cranki/Downloads/avatar")), "png", os)
-//    val is = new ByteArrayInputStream(os.toByteArray)
-//
-//    val encoded = Base64.getEncoder.encodeToString(os.toByteArray)
-//    val decoded = Base64.getDecoder.decode(encoded)
-//
-//    import java.util.Arrays;
-//    println(Arrays.equals(decoded, os.toByteArray))
-//
+    val os = new ByteArrayOutputStream()
+    ImageIO.write(ImageIO.read(new File("/home/cranki/Downloads/princess_jasmine.jpg")), "png", os)
+    val is = new ByteArrayInputStream(os.toByteArray)
+
+    val encoded = Base64.getEncoder.encodeToString(os.toByteArray)
+    val decoded = Base64.getDecoder.decode(encoded)
+
+    import java.util.Arrays;
+    println(Arrays.equals(decoded, os.toByteArray))
+
+    println(encoded)
 //    val in = minio.getObject("cassandra", "avatar")
 //
 //    val bytes = Streamable.bytes(in)
 //    val img = ImageIO.read(new ByteArrayInputStream(bytes))
 //
 //    ImageIO.write(img, "png", new File("/home/cranki/Downloads/png.png"))
-    val u = User("cranki", "cranki@gmail.com", "abcd1234", "cranki/avatar", 0L, 0L)
-    u.getClass.getDeclaredFields.foreach(f => println(f.getName))
+//    val u = User("cranki", "cranki@gmail.com", "abcd1234", "cranki/avatar", 0L, 0L)
+//    u.getClass.getDeclaredFields.foreach(f => println(f.getName))
   }
 }
 
@@ -278,6 +280,56 @@ class DBWorker(connectionPoolName: Symbol, redis: RedisClient, minio: MinioClien
       } catch {
         case ex: SQLException => s ! (StatusCodes.NotFound, ex)
       }
+
+    case LoginUser(u) => {
+      val s = sender()
+
+      redis.exists(s"user:${u.name}").map({
+        case true => {
+          redis.hgetall(s"user:${u.name}").
+            map(m => {
+              val loc = m("avatar").decodeString("UTF-8").split("/")
+              val avatar = image(loc(0), loc(1))
+
+              val user = User(m("name").decodeString("UTF-8"),
+                m("email").decodeString("UTF-8"),
+                m("password").decodeString("UTF-8"),
+                avatar,
+                m("created").decodeString("UTF-8").toLong,
+                m("last_login").decodeString("UTF-8").toLong)
+
+              user.password == u.password match {
+                case true => s ! (StatusCodes.OK, user)
+                case false => s ! (StatusCodes.NotFound, None)
+              }
+            })
+        }
+        case false => {
+          NamedDB(connectionPoolName) readOnly { implicit session =>
+            val us = User.syntax("u")
+            val res = withSQL {
+              select.from(User as us).where.eq(us.name, u.name).and.eq(us.password, u.password)
+            }.map(User(us.resultName)).single.apply()
+            res match {
+              case Some(x) =>
+                redis.hmset(s"user:${x.name}", Map("name" -> x.name,
+                  "email" -> x.email,
+                  "password" -> x.password,
+                  "avatar" -> x.avatar,
+                  "created" -> s"${x.created}",
+                  "last_login" -> s"${x.last_login}"))
+
+                val loc = x.avatar.split("/")
+                val avatar = image(loc(0), loc(1))
+                val u = User(x.name, x.email, x.password, avatar, x.created, x.last_login)
+
+                s ! (StatusCodes.OK, u)
+              case None => s ! (StatusCodes.NotFound, None)
+            }
+          }
+        }
+      })
+    }
   }
 
   def image(bucket: String, img: String = "avatar"): String =
